@@ -20,6 +20,13 @@
 	(cons :larm-shoulder-p 12) ;; downward is positive
 	))
 
+(if (not (boundp '*with-legs*))
+    (setq *with-legs*
+	  (cond
+	   ((string= (unix:getenv "ROBOT_NAME") "kxrl2l6a6h2m") t)
+	   ((string= (unix:getenv "ROBOT_NAME") "kxrl2l2a6h2m") nil)
+	   (t (warn ";; ROBOT_NAME=~A~%" (unix:getenv "ROBOT_NAME"))))))
+
 (defun demo ()
   (send *ri* :hold)
   (send *robot* :neutral)
@@ -86,6 +93,54 @@
      (send *ri* :wait-interpolation)
      )))
 
+(defun stand-up ()
+  (let* (av tv
+	 (rs (send *robot* :rarm :shoulder-r :no))
+	 (re (send *robot* :rarm :elbow-p :no))
+	 (rw (send *robot* :rarm :wrist-p :no))
+	 (ls (send *robot* :larm :shoulder-r :no))
+	 (le (send *robot* :larm :elbow-p :no))
+	 (lw (send *robot* :larm :wrist-p :no))
+	 (jlist (list rs re rw ls le lw))
+	 (jalist (list (cons :rs rs) (cons :re re) (cons :rw rw)
+		       (cons :ls ls) (cons :le le) (cons :lw lw)))
+	 )
+    (setq av (send *ri* :read-angle-vector))
+    (warn ";(a:~5,1f ~5,1f ~5,1f | ~5,1f ~5,1f ~5,1f) av=~A~%"
+	  (elt av rs) (elt av re) (elt av rw)
+	  (elt av ls) (elt av le) (elt av lw) av)
+    (n2r)
+    ;;;
+    (do-until-key
+     (setq tv (send *ri* :read-torque-vector))
+     (warn ";(t:~6,1f ~6,1f ~6,1f | ~6,1f ~6,1f ~6,1f) tv=~A~%"
+	   (elt tv rs) (elt tv re) (elt tv rw)
+	   (elt tv ls) (elt tv le) (elt tv lw) tv)
+     (warn ";(a:~5,1f ~5,1f ~5,1f | ~5,1f ~5,1f ~5,1f) av=~A~%"
+	   (elt av rs) (elt av re) (elt av rw)
+	   (elt av ls) (elt av le) (elt av lw) av)
+     (dolist (j jalist)
+       (cond
+	((or (< *torque-max* (elt tv (cdr j)))
+	     (< (elt tv (cdr j)) (- *torque-max*)))
+	 (warn "too much torque(~6,1f~A)~%" (elt tv (cdr j)) (car j)))
+	((< (+ (cdr (assq (car j) *torque-target*)) *torque-eps*) (elt tv (cdr j)))
+	 (incf (elt av (cdr j)) *joint-eps*)
+	 (warn "av(~5,1f~A) increased~%" (elt av (cdr j)) (car j)))
+	((< (elt tv (cdr j)) (- (cdr (assq (car j) *torque-target*)) *torque-eps*))
+	 (decf (elt av (cdr j)) *joint-eps*)
+	 (warn "av(~5,1f~A) decreased~%" (elt av (cdr j)) (car j)))
+	(t
+	 ;; (warn "av(~5,1f~A) is not changed~%" (elt av (cdr j)) (car j))
+	 ))
+       )
+     (send *ri* :angle-vector av *joint-move-time*)
+     (warn " ;(a:~5,1f ~5,1f ~5,1f | ~5,1f ~5,1f ~5,1f) av=~A~%"
+	   (elt av rs) (elt av re) (elt av rw)
+	   (elt av ls) (elt av le) (elt av lw) av)
+     (send *ri* :wait-interpolation)
+     )))
+
 (defun prepare-for-bucket ()
   (send *robot* :arms :shoulder-p :joint-angle -80)
   (send *robot* :rarm :shoulder-y :joint-angle  90)
@@ -94,6 +149,14 @@
   (send *robot* :larm :shoulder-r :joint-angle  30)
   (send *robot* :arms :elbow-p    :joint-angle -10)
   (send *robot* :arms :wrist-p    :joint-angle  75)
+  (when *with-legs*
+    (send *robot* :legs :crotch-y :joint-angle   0)
+    (send *robot* :legs :crotch-p :joint-angle -60)
+    (send *robot* :legs :crotch-r :joint-angle   0)
+    (send *robot* :legs :knee-p   :joint-angle 135)
+    (send *robot* :legs :ankle-p  :joint-angle -75)
+    (send *robot* :legs :ankle-r  :joint-angle   0)
+    )
   (send *robot* :angle-vector)
   )
 
@@ -102,8 +165,8 @@
   (send *robot-viewer* :draw-objects)
   )
 
-(defun r2n ()
-  (send *ri* :angle-vector (send *robot* :angle-vector) 5000)
+(defun r2n (&optional (msec 5000))
+  (send *ri* :angle-vector (send *robot* :angle-vector) msec)
   (send *robot-viewer* :draw-objects)
   )
 
