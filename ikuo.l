@@ -20,7 +20,9 @@
 	))
 
 (defvar *torque-eps* 10.0)
+(defvar *torque-max* 100.0)
 (defvar *joint-eps* 5.0)
+(defvar *joint-move-time* (floor (* *joint-eps* 500)))
 
 (defun test-arm ()
   (let (av tv
@@ -40,12 +42,15 @@
      (warn ";(t:~A) tv=~A~%" (elt tv rs) tv)
      (warn " ;(a:~A) av=~A~%" (elt av rs) av)
      (cond
+      ((or (< *torque-max* (elt tv rs))
+	   (< (elt tv rs) (- *torque-max*)))
+       (warn "too much torque~%")
       ((< *torque-eps* (elt tv rs))
        (incf (elt av rs) *joint-eps*))
       ((< (elt tv rs) (- *torque-eps*))
        (decf (elt av rs) *joint-eps*))
       (t (warn "av is not changed~%")))
-     (send *ri* :angle-vector av)
+     (send *ri* :angle-vector av *joint-move-time*)
      (warn " ;(a:~A) av=~A~%" (elt av rs) av)
      (send *ri* :wait-interpolation)
      )))
